@@ -32,10 +32,10 @@ const (
 )
 
 // ErrMissingBoundary is returned when there is no boundary given for a multipart entity
-var ErrMissingBoundary = errors.New("No boundary found for multipart entity")
+var ErrMissingBoundary = errors.New("no boundary found for multipart entity")
 
 // ErrMissingContentType is returned when there is no "Content-Type" header for a MIME entity
-var ErrMissingContentType = errors.New("No Content-Type found for MIME entity")
+var ErrMissingContentType = errors.New("no Content-Type found for MIME entity")
 
 // Email is the type used for email messages
 type Email struct {
@@ -207,6 +207,7 @@ func parseMIMEParts(hs textproto.MIMEHeader, b io.Reader) ([]*part, error) {
 			if err != nil {
 				return ps, err
 			}
+
 			if _, ok := p.Header["Content-Type"]; !ok {
 				p.Header.Set("Content-Type", defaultContentType)
 			}
@@ -214,39 +215,42 @@ func parseMIMEParts(hs textproto.MIMEHeader, b io.Reader) ([]*part, error) {
 			if err != nil {
 				return ps, err
 			}
+
 			if strings.HasPrefix(subct, "multipart/") {
 				sps, err := parseMIMEParts(p.Header, p)
 				if err != nil {
 					return ps, err
 				}
 				ps = append(ps, sps...)
-			} else {
-				var reader io.Reader
-				reader = p
-				const cte = "Content-Transfer-Encoding"
-				if p.Header.Get(cte) == "base64" {
-					reader = base64.NewDecoder(base64.StdEncoding, reader)
-				}
-				// Otherwise, just append the part to the list
-				// Copy the part data into the buffer
-				if _, err := io.Copy(&buf, reader); err != nil {
-					return ps, err
-				}
-				ps = append(ps, &part{body: buf.Bytes(), header: p.Header})
+				continue
 			}
-		}
-	} else {
-		// If it is not a multipart email, parse the body content as a single "part"
-		if hs.Get("Content-Transfer-Encoding") == "quoted-printable" {
-			b = quotedprintable.NewReader(b)
 
+			var reader io.Reader
+			reader = p
+			const cte = "Content-Transfer-Encoding"
+			if p.Header.Get(cte) == "base64" {
+				reader = base64.NewDecoder(base64.StdEncoding, reader)
+			}
+			// Otherwise, just append the part to the list
+			// Copy the part data into the buffer
+			if _, err := io.Copy(&buf, reader); err != nil {
+				return ps, err
+			}
+			ps = append(ps, &part{body: buf.Bytes(), header: p.Header})
 		}
-		var buf bytes.Buffer
-		if _, err := io.Copy(&buf, b); err != nil {
-			return ps, err
-		}
-		ps = append(ps, &part{body: buf.Bytes(), header: hs})
+		return ps, nil
 	}
+
+	// If it is not a multipart email, parse the body content as a single "part"
+	if hs.Get("Content-Transfer-Encoding") == "quoted-printable" {
+		b = quotedprintable.NewReader(b)
+
+	}
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, b); err != nil {
+		return ps, err
+	}
+	ps = append(ps, &part{body: buf.Bytes(), header: hs})
 	return ps, nil
 }
 
@@ -463,6 +467,14 @@ func (e *Email) Bytes() ([]byte, error) {
 					if err != nil {
 						return nil, err
 					}
+
+					transferEncoding := a.Header.Get("Content-Transfer-Encoding")
+					if transferEncoding == "7bit" || transferEncoding == "8bit" {
+						_, _ = ap.Write(a.Content)
+
+						continue
+					}
+
 					// Write the base64Wrapped content to the part
 					base64Wrap(ap, a.Content)
 				}
@@ -482,6 +494,14 @@ func (e *Email) Bytes() ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		transferEncoding := a.Header.Get("Content-Transfer-Encoding")
+		if transferEncoding == "7bit" || transferEncoding == "8bit" {
+			_, _ = ap.Write(a.Content)
+
+			continue
+		}
+
 		// Write the base64Wrapped content to the part
 		base64Wrap(ap, a.Content)
 	}
