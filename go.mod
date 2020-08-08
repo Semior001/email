@@ -1,3 +1,3 @@
-module github.com/Semior001/email
+module github.com/jordan-wright/email
 
 go 1.13
